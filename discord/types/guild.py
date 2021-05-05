@@ -31,6 +31,12 @@ from .activity import PartialPresenceUpdate
 from .role import Role
 from .member import Member
 from .emoji import Emoji
+from .user import User
+
+
+class Ban(TypedDict):
+    reason: Optional[str]
+    user: User
 
 
 class _UnavailableGuildOptional(TypedDict, total=False):
@@ -113,6 +119,7 @@ class Guild(_BaseGuildPreview, _GuildOptional):
     explicit_content_filter: ExplicitContentFilterLevel
     roles: List[Role]
     mfa_level: MFALevel
+    nsfw: bool
     application_id: Optional[Snowflake]
     system_channel_id: Optional[Snowflake]
     system_channel_flags: int

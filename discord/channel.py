@@ -27,7 +27,7 @@ import asyncio
 
 import discord.abc
 from .permissions import Permissions
-from .enums import ChannelType, try_enum, VoiceRegion
+from .enums import ChannelType, try_enum, VoiceRegion, VideoQualityMode
 from .mixins import Hashable
 from . import utils
 from .asset import Asset
@@ -92,6 +92,12 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         in this channel. A value of `0` denotes that it is disabled.
         Bots and users with :attr:`~Permissions.manage_channels` or
         :attr:`~Permissions.manage_messages` bypass slowmode.
+    nsfw: :class:`bool`
+        If the channel is marked as "not safe for work".
+
+        .. note::
+
+            To check if the channel or the guild of that channel are marked as NSFW, consider :meth:`is_nsfw` instead.
     """
 
     __slots__ = ('name', 'id', 'guild', 'topic', '_state', 'nsfw',
@@ -157,7 +163,7 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
 
     def is_nsfw(self):
         """:class:`bool`: Checks if the channel is NSFW."""
-        return self.nsfw
+        return self.nsfw or self.guild.nsfw
 
     def is_news(self):
         """:class:`bool`: Checks if the channel is a news channel."""
@@ -263,8 +269,6 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         You must have the :attr:`~Permissions.manage_messages` permission to
         use this.
 
-        Usable only by bot accounts.
-
         Parameters
         -----------
         messages: Iterable[:class:`abc.Snowflake`]
@@ -275,8 +279,7 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         ClientException
             The number of messages to delete was more than 100.
         Forbidden
-            You do not have proper permissions to delete the messages or
-            you're not using a bot account.
+            You do not have proper permissions to delete the messages.
         NotFound
             If single delete, then the message was already deleted.
         HTTPException
@@ -307,8 +310,8 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         without discrimination.
 
         You must have the :attr:`~Permissions.manage_messages` permission to
-        delete messages even if they are your own (unless you are a user
-        account). The :attr:`~Permissions.read_message_history` permission is
+        delete messages even if they are your own.
+        The :attr:`~Permissions.read_message_history` permission is
         also needed to retrieve message history.
 
         Examples
@@ -535,7 +538,7 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
 class VocalGuildChannel(discord.abc.Connectable, discord.abc.GuildChannel, Hashable):
     __slots__ = ('name', 'id', 'guild', 'bitrate', 'user_limit',
                  '_state', 'position', '_overwrites', 'category_id',
-                 'rtc_region')
+                 'rtc_region', 'video_quality_mode')
 
     def __init__(self, *, state, guild, data):
         self._state = state
@@ -554,6 +557,7 @@ class VocalGuildChannel(discord.abc.Connectable, discord.abc.GuildChannel, Hasha
         self.rtc_region = data.get('rtc_region')
         if self.rtc_region:
             self.rtc_region = try_enum(VoiceRegion, self.rtc_region)
+        self.video_quality_mode = try_enum(VideoQualityMode, data.get('video_quality_mode', 1))
         self.category_id = utils._get_as_snowflake(data, 'parent_id')
         self.position = data['position']
         self.bitrate = data.get('bitrate')
@@ -648,6 +652,10 @@ class VoiceChannel(VocalGuildChannel):
         A value of ``None`` indicates automatic voice region detection.
 
         .. versionadded:: 1.7
+    video_quality_mode: :class:`VideoQualityMode`
+        The camera video quality for the voice channel's participants.
+
+        .. versionadded:: 2.0
     """
 
     __slots__ = ()
@@ -659,6 +667,7 @@ class VoiceChannel(VocalGuildChannel):
             ('rtc_region', self.rtc_region),
             ('position', self.position),
             ('bitrate', self.bitrate),
+            ('video_quality_mode', self.video_quality_mode),
             ('user_limit', self.user_limit),
             ('category_id', self.category_id)
         ]
@@ -714,6 +723,10 @@ class VoiceChannel(VocalGuildChannel):
             A value of ``None`` indicates automatic voice region detection.
 
             .. versionadded:: 1.7
+        video_quality_mode: :class:`VideoQualityMode`
+            The camera video quality for the voice channel's participants.
+
+            .. versionadded:: 2.0
 
         Raises
         ------
@@ -772,6 +785,10 @@ class StageChannel(VocalGuildChannel):
     rtc_region: Optional[:class:`VoiceRegion`]
         The region for the stage channel's voice communication.
         A value of ``None`` indicates automatic voice region detection.
+    video_quality_mode: :class:`VideoQualityMode`
+        The camera video quality for the stage channel's participants.
+
+        .. versionadded:: 2.0
     """
     __slots__ = ('topic',)
 
@@ -783,6 +800,7 @@ class StageChannel(VocalGuildChannel):
             ('rtc_region', self.rtc_region),
             ('position', self.position),
             ('bitrate', self.bitrate),
+            ('video_quality_mode', self.video_quality_mode),
             ('user_limit', self.user_limit),
             ('category_id', self.category_id)
         ]
@@ -839,6 +857,10 @@ class StageChannel(VocalGuildChannel):
         rtc_region: Optional[:class:`VoiceRegion`]
             The new region for the stage channel's voice communication.
             A value of ``None`` indicates automatic voice region detection.
+        video_quality_mode: :class:`VideoQualityMode`
+            The camera video quality for the stage channel's participants.
+
+            .. versionadded:: 2.0
 
         Raises
         ------
@@ -886,6 +908,12 @@ class CategoryChannel(discord.abc.GuildChannel, Hashable):
     position: :class:`int`
         The position in the category list. This is a number that starts at 0. e.g. the
         top category is position 0.
+    nsfw: :class:`bool`
+        If the channel is marked as "not safe for work".
+
+        .. note::
+
+            To check if the channel or the guild of that channel are marked as NSFW, consider :meth:`is_nsfw` instead.
     """
 
     __slots__ = ('name', 'id', 'guild', 'nsfw', '_state', 'position', '_overwrites', 'category_id')
@@ -917,7 +945,7 @@ class CategoryChannel(discord.abc.GuildChannel, Hashable):
 
     def is_nsfw(self):
         """:class:`bool`: Checks if the category is NSFW."""
-        return self.nsfw
+        return self.nsfw or self.guild.nsfw
 
     @utils.copy_doc(discord.abc.GuildChannel.clone)
     async def clone(self, *, name=None, reason=None):
@@ -1000,7 +1028,7 @@ class CategoryChannel(discord.abc.GuildChannel, Hashable):
 
     @property
     def stage_channels(self):
-        """List[:class:`StageChannel`]: Returns the voice channels that are under this category.
+        """List[:class:`StageChannel`]: Returns the stage channels that are under this category.
 
         .. versionadded:: 1.7
         """
@@ -1082,6 +1110,12 @@ class StoreChannel(discord.abc.GuildChannel, Hashable):
     position: :class:`int`
         The position in the channel list. This is a number that starts at 0. e.g. the
         top channel is position 0.
+    nsfw: :class:`bool`
+        If the channel is marked as "not safe for work".
+
+        .. note::
+
+            To check if the channel or the guild of that channel are marked as NSFW, consider :meth:`is_nsfw` instead.
     """
     __slots__ = ('name', 'id', 'guild', '_state', 'nsfw',
                  'category_id', 'position', '_overwrites',)
@@ -1122,7 +1156,7 @@ class StoreChannel(discord.abc.GuildChannel, Hashable):
 
     def is_nsfw(self):
         """:class:`bool`: Checks if the channel is NSFW."""
-        return self.nsfw
+        return self.nsfw or self.guild.nsfw
 
     @utils.copy_doc(discord.abc.GuildChannel.clone)
     async def clone(self, *, name=None, reason=None):
@@ -1195,8 +1229,10 @@ class DMChannel(discord.abc.Messageable, Hashable):
 
     Attributes
     ----------
-    recipient: :class:`User`
+    recipient: Optional[:class:`User`]
         The user you are participating with in the direct message channel.
+        If this channel is received through the gateway, the recipient information
+        may not be always available.
     me: :class:`ClientUser`
         The user presenting yourself.
     id: :class:`int`
@@ -1215,10 +1251,21 @@ class DMChannel(discord.abc.Messageable, Hashable):
         return self
 
     def __str__(self):
-        return f'Direct Message with {self.recipient}'
+        if self.recipient:
+            return f'Direct Message with {self.recipient}'
+        return 'Direct Message with Unknown User'
 
     def __repr__(self):
         return f'<DMChannel id={self.id} recipient={self.recipient!r}>'
+
+    @classmethod
+    def _from_message(cls, state, channel_id):
+        self = cls.__new__(cls)
+        self._state = state
+        self.id = channel_id
+        self.recipient = None
+        self.me = state.user
+        return self
 
     @property
     def type(self):
@@ -1312,13 +1359,11 @@ class GroupChannel(discord.abc.Messageable, Hashable):
         The group channel ID.
     owner: :class:`User`
         The user that owns the group channel.
-    icon: Optional[:class:`str`]
-        The group channel's icon hash if provided.
     name: Optional[:class:`str`]
         The group channel's name if provided.
     """
 
-    __slots__ = ('id', 'recipients', 'owner', 'icon', 'name', 'me', '_state')
+    __slots__ = ('id', 'recipients', 'owner', '_icon', 'name', 'me', '_state')
 
     def __init__(self, *, me, state, data):
         self._state = state
@@ -1328,7 +1373,7 @@ class GroupChannel(discord.abc.Messageable, Hashable):
 
     def _update_group(self, data):
         owner_id = utils._get_as_snowflake(data, 'owner_id')
-        self.icon = data.get('icon')
+        self._icon = data.get('icon')
         self.name = data.get('name')
 
         try:
@@ -1362,40 +1407,11 @@ class GroupChannel(discord.abc.Messageable, Hashable):
         return ChannelType.group
 
     @property
-    def icon_url(self):
-        """:class:`Asset`: Returns the channel's icon asset if available.
-
-        This is equivalent to calling :meth:`icon_url_as` with
-        the default parameters ('webp' format and a size of 1024).
-        """
-        return self.icon_url_as()
-
-    def icon_url_as(self, *, format='webp', size=1024):
-        """Returns an :class:`Asset` for the icon the channel has.
-
-        The format must be one of 'webp', 'jpeg', 'jpg' or 'png'.
-        The size must be a power of 2 between 16 and 4096.
-
-        .. versionadded:: 2.0
-
-        Parameters
-        -----------
-        format: :class:`str`
-            The format to attempt to convert the icon to. Defaults to 'webp'.
-        size: :class:`int`
-            The size of the image to display.
-
-        Raises
-        ------
-        InvalidArgument
-            Bad image format passed to ``format`` or invalid ``size``.
-
-        Returns
-        --------
-        :class:`Asset`
-            The resulting CDN asset.
-        """
-        return Asset._from_icon(self._state, self, 'channel', format=format, size=size)
+    def icon(self):
+        """Optional[:class:`Asset`]: Returns the channel's icon asset if available."""
+        if self._icon is None:
+            return None
+        return Asset._from_icon(self._state, self.id, self._icon, path='channel')
 
     @property
     def created_at(self):

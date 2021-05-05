@@ -42,6 +42,7 @@ __all__ = (
     'MaxConcurrencyReached',
     'NotOwner',
     'MessageNotFound',
+    'ObjectNotFound',
     'MemberNotFound',
     'GuildNotFound',
     'UserNotFound',
@@ -62,6 +63,7 @@ __all__ = (
     'NSFWChannelRequired',
     'ConversionError',
     'BadUnionArgument',
+    'BadLiteralArgument',
     'ArgumentParsingError',
     'UnexpectedQuoteError',
     'InvalidEndOfQuotedStringError',
@@ -73,6 +75,11 @@ __all__ = (
     'ExtensionFailed',
     'ExtensionNotFound',
     'CommandRegistrationError',
+    'FlagError',
+    'BadFlagArgument',
+    'MissingFlagArgument',
+    'TooManyFlags',
+    'MissingRequiredFlag',
 )
 
 class CommandError(DiscordException):
@@ -211,6 +218,23 @@ class NotOwner(CheckFailure):
     This inherits from :exc:`CheckFailure`
     """
     pass
+
+class ObjectNotFound(BadArgument):
+    """Exception raised when the argument provided did not match the format
+    of an ID or a mention.
+
+    This inherits from :exc:`BadArgument`
+
+    .. versionadded:: 2.0
+
+    Attributes
+    -----------
+    argument: :class:`str`
+        The argument supplied by the caller that was not matched
+    """
+    def __init__(self, argument):
+        self.argument = argument
+        super().__init__(f'{argument!r} does not follow a valid ID or mention format.')
 
 class MemberNotFound(BadArgument):
     """Exception raised when the member provided was not found in the bot's
@@ -644,6 +668,8 @@ class BadUnionArgument(UserInputError):
             try:
                 return x.__name__
             except AttributeError:
+                if hasattr(x, '__origin__'):
+                    return repr(x)
                 return x.__class__.__name__
 
         to_string = [_get_name(x) for x in converters]
@@ -653,6 +679,36 @@ class BadUnionArgument(UserInputError):
             fmt = ' or '.join(to_string)
 
         super().__init__(f'Could not convert "{param.name}" into {fmt}.')
+
+class BadLiteralArgument(UserInputError):
+    """Exception raised when a :data:`typing.Literal` converter fails for all
+    its associated values.
+
+    This inherits from :exc:`UserInputError`
+
+    .. versionadded:: 2.0
+
+    Attributes
+    -----------
+    param: :class:`inspect.Parameter`
+        The parameter that failed being converted.
+    literals: Tuple[Any, ...]
+        A tuple of values compared against in conversion, in order of failure.
+    errors: List[:class:`CommandError`]
+        A list of errors that were caught from failing the conversion.
+    """
+    def __init__(self, param, literals, errors):
+        self.param = param
+        self.literals = literals
+        self.errors = errors
+
+        to_string = [repr(l) for l in literals]
+        if len(to_string) > 2:
+            fmt = '{}, or {}'.format(', '.join(to_string[:-1]), to_string[-1])
+        else:
+            fmt = ' or '.join(to_string)
+
+        super().__init__(f'Could not convert "{param.name}" into the literal {fmt}.')
 
 class ArgumentParsingError(UserInputError):
     """An exception raised when the parser fails to parse a user's input.
@@ -779,11 +835,8 @@ class ExtensionNotFound(ExtensionError):
     -----------
     name: :class:`str`
         The extension that had the error.
-    original: :class:`NoneType`
-        Always ``None`` for backwards compatibility.
     """
-    def __init__(self, name, original=None):
-        self.original = None
+    def __init__(self, name):
         msg = f'Extension {name!r} could not be loaded.'
         super().__init__(msg, name=name)
 
@@ -807,3 +860,76 @@ class CommandRegistrationError(ClientException):
         self.alias_conflict = alias_conflict
         type_ = 'alias' if alias_conflict else 'command'
         super().__init__(f'The {type_} {name} is already an existing command or alias.')
+
+class FlagError(BadArgument):
+    """The base exception type for all flag parsing related errors.
+
+    This inherits from :exc:`BadArgument`.
+
+    .. versionadded:: 2.0
+    """
+    pass
+
+class TooManyFlags(FlagError):
+    """An exception raised when a flag has received too many values.
+
+    This inherits from :exc:`FlagError`.
+
+    .. versionadded:: 2.0
+
+    Attributes
+    ------------
+    flag: :class:`~discord.ext.commands.Flag`
+        The flag that received too many values.
+    values: List[:class:`str`]
+        The values that were passed.
+    """
+    def __init__(self, flag, values):
+        self.flag = flag
+        self.values = values
+        super().__init__(f'Too many flag values, expected {flag.max_args} but received {len(values)}.')
+
+class BadFlagArgument(FlagError):
+    """An exception raised when a flag failed to convert a value.
+
+    """
+    def __init__(self, flag):
+        self.flag = flag
+        try:
+            name = flag.annotation.__name__
+        except AttributeError:
+            name = flag.annotation.__class__.__name__
+
+        super().__init__(f'Could not convert to {name!r} for flag {flag.name!r}')
+
+class MissingRequiredFlag(FlagError):
+    """An exception raised when a required flag was not given.
+
+    This inherits from :exc:`FlagError`
+
+    .. versionadded:: 2.0
+
+    Attributes
+    -----------
+    flag: :class:`~discord.ext.commands.Flag`
+        The required flag that was not found.
+    """
+    def __init__(self, flag):
+        self.flag = flag
+        super().__init__(f'Flag {flag.name!r} is required and missing')
+
+class MissingFlagArgument(FlagError):
+    """An exception raised when a flag did not get a value.
+
+    This inherits from :exc:`FlagError`
+
+    .. versionadded:: 2.0
+
+    Attributes
+    -----------
+    flag: :class:`~discord.ext.commands.Flag`
+        The flag that did not get a value.
+    """
+    def __init__(self, flag):
+        self.flag = flag
+        super().__init__(f'Flag {flag.name!r} does not have an argument')

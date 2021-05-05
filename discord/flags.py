@@ -34,10 +34,12 @@ __all__ = (
     'PublicUserFlags',
     'Intents',
     'MemberCacheFlags',
+    'ApplicationFlags',
 )
 
 FV = TypeVar('FV', bound='flag_value')
 BF = TypeVar('BF', bound='BaseFlags')
+
 
 class flag_value(Generic[BF]):
     def __init__(self, func: Callable[[Any], int]):
@@ -63,16 +65,20 @@ class flag_value(Generic[BF]):
     def __repr__(self):
         return f'<flag_value flag={self.flag!r}>'
 
+
 class alias_flag_value(flag_value):
     pass
 
+
 def fill_with_flags(*, inverted: bool = False):
     def decorator(cls: Type[BF]):
+        # fmt: off
         cls.VALID_FLAGS = {
             name: value.flag
             for name, value in cls.__dict__.items()
             if isinstance(value, flag_value)
         }
+        # fmt: on
 
         if inverted:
             max_bits = max(cls.VALID_FLAGS.values()).bit_length()
@@ -81,7 +87,9 @@ def fill_with_flags(*, inverted: bool = False):
             cls.DEFAULT_VALUE = 0
 
         return cls
+
     return decorator
+
 
 # n.b. flags must inherit from this and use the decorator above
 class BaseFlags:
@@ -135,6 +143,7 @@ class BaseFlags:
             self.value &= ~o
         else:
             raise TypeError(f'Value to set for {self.__class__.__name__} must be a bool.')
+
 
 @fill_with_flags(inverted=True)
 class SystemChannelFlags(BaseFlags):
@@ -199,6 +208,14 @@ class SystemChannelFlags(BaseFlags):
         """:class:`bool`: Returns ``True`` if the system channel is used for Nitro boosting notifications."""
         return 2
 
+    @flag_value
+    def guild_reminder_notifications(self):
+        """:class:`bool`: Returns ``True`` if the system channel is used for server setup helpful tips notifications.
+
+        .. versionadded:: 2.0
+        """
+        return 4
+
 
 @fill_with_flags()
 class MessageFlags(BaseFlags):
@@ -261,6 +278,7 @@ class MessageFlags(BaseFlags):
         An urgent message is one sent by Discord Trust and Safety.
         """
         return 16
+
 
 @fill_with_flags()
 class PublicUserFlags(BaseFlags):
@@ -488,6 +506,7 @@ class Intents(BaseFlags):
         This also corresponds to the following attributes and classes in terms of cache:
 
         - :meth:`Client.get_all_members`
+        - :meth:`Client.get_user`
         - :meth:`Guild.chunk`
         - :meth:`Guild.fetch_members`
         - :meth:`Guild.get_member`
@@ -496,7 +515,7 @@ class Intents(BaseFlags):
         - :attr:`Member.nick`
         - :attr:`Member.premium_since`
         - :attr:`User.name`
-        - :attr:`User.avatar` (:attr:`User.avatar_url` and :meth:`User.avatar_url_as`)
+        - :attr:`User.avatar`
         - :attr:`User.discriminator`
 
         For more information go to the :ref:`member intent documentation <need_members_intent>`.
@@ -627,7 +646,6 @@ class Intents(BaseFlags):
         - :func:`on_message_delete` (both guilds and DMs)
         - :func:`on_raw_message_delete` (both guilds and DMs)
         - :func:`on_raw_message_edit` (both guilds and DMs)
-        - :func:`on_private_channel_create`
 
         This also corresponds to the following attributes and classes in terms of cache:
 
@@ -682,7 +700,6 @@ class Intents(BaseFlags):
         - :func:`on_message_delete` (only for DMs)
         - :func:`on_raw_message_delete` (only for DMs)
         - :func:`on_raw_message_edit` (only for DMs)
-        - :func:`on_private_channel_create`
 
         This also corresponds to the following attributes and classes in terms of cache:
 
@@ -802,6 +819,7 @@ class Intents(BaseFlags):
         """
         return 1 << 14
 
+
 @fill_with_flags()
 class MemberCacheFlags(BaseFlags):
     """Controls the library's cache policy when it comes to members.
@@ -876,17 +894,6 @@ class MemberCacheFlags(BaseFlags):
         return self.value == self.DEFAULT_VALUE
 
     @flag_value
-    def online(self):
-        """:class:`bool`: Whether to cache members with a status.
-
-        For example, members that are part of the initial ``GUILD_CREATE``
-        or become online at a later point. This requires :attr:`Intents.presences`.
-
-        Members that go offline are no longer cached.
-        """
-        return 1
-
-    @flag_value
     def voice(self):
         """:class:`bool`: Whether to cache members that are in voice.
 
@@ -894,7 +901,7 @@ class MemberCacheFlags(BaseFlags):
 
         Members that leave voice are no longer cached.
         """
-        return 2
+        return 1
 
     @flag_value
     def joined(self):
@@ -905,7 +912,7 @@ class MemberCacheFlags(BaseFlags):
 
         Members that leave the guild are no longer cached.
         """
-        return 4
+        return 2
 
     @classmethod
     def from_intents(cls: Type[MemberCacheFlags], intents: Intents) -> MemberCacheFlags:
@@ -926,35 +933,89 @@ class MemberCacheFlags(BaseFlags):
         self = cls.none()
         if intents.members:
             self.joined = True
-        if intents.presences:
-            self.online = True
         if intents.voice_states:
             self.voice = True
-
-        if not self.joined and self.online and self.voice:
-            self.voice = False
 
         return self
 
     def _verify_intents(self, intents: Intents):
-        if self.online and not intents.presences:
-            raise ValueError('MemberCacheFlags.online requires Intents.presences enabled')
-
         if self.voice and not intents.voice_states:
             raise ValueError('MemberCacheFlags.voice requires Intents.voice_states')
 
         if self.joined and not intents.members:
             raise ValueError('MemberCacheFlags.joined requires Intents.members')
 
-        if not self.joined and self.voice and self.online:
-            msg = 'Setting both MemberCacheFlags.voice and MemberCacheFlags.online requires MemberCacheFlags.joined ' \
-                  'to properly evict members from the cache.'
-            raise ValueError(msg)
-
     @property
     def _voice_only(self):
-        return self.value == 2
-
-    @property
-    def _online_only(self):
         return self.value == 1
+
+
+@fill_with_flags()
+class ApplicationFlags(BaseFlags):
+    r"""Wraps up the Discord Application flags.
+
+    .. container:: operations
+
+        .. describe:: x == y
+
+            Checks if two ApplicationFlags are equal.
+        .. describe:: x != y
+
+            Checks if two ApplicationFlags are not equal.
+        .. describe:: hash(x)
+
+            Return the flag's hash.
+        .. describe:: iter(x)
+
+            Returns an iterator of ``(name, value)`` pairs. This allows it
+            to be, for example, constructed as a dict or a list of pairs.
+            Note that aliases are not shown.
+
+    .. versionadded:: 2.0
+
+    Attributes
+    -----------
+    value: :class:`int`
+        The raw value. You should query flags via the properties
+        rather than using this raw value.
+    """
+
+    @flag_value
+    def gateway_presence(self):
+        """:class:`bool`: Returns ``True`` if the application is verified and is allowed to
+        receive presence information over the gateway.
+        """
+        return 1 << 12
+
+    @flag_value
+    def gateway_presence_limited(self):
+        """:class:`bool`: Returns ``True`` if the application is allowed to receive limited
+        presence information over the gateway.
+        """
+        return 1 << 13
+
+    @flag_value
+    def gateway_guild_members(self):
+        """:class:`bool`: Returns ``True`` if the application is verified and is allowed to
+        receive guild members information over the gateway.
+        """
+        return 1 << 14
+
+    @flag_value
+    def gateway_guild_members_limited(self):
+        """:class:`bool`: Returns ``True`` if the application is allowed to receive limited
+        guild members information over the gateway.
+        """
+        return 1 << 15
+
+    @flag_value
+    def verification_pending_guild_limit(self):
+        """:class:`bool`: Returns ``True`` if the application is currently pending verification
+        and has hit the guild limit.
+        """
+        return 1 << 16
+
+    @flag_value
+    def embedded(self):
+        """:class:`bool`: Returns ``True`` if the application is embedded within the Discord client."""
+        return 1 << 17

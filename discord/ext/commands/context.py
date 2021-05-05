@@ -24,6 +24,7 @@ DEALINGS IN THE SOFTWARE.
 
 import discord.abc
 import discord.utils
+import re
 
 __all__ = (
     'Context',
@@ -52,6 +53,11 @@ class Context(discord.abc.Messageable):
         A dictionary of transformed arguments that were passed into the command.
         Similar to :attr:`args`\, if this is accessed in the
         :func:`on_command_error` event then this dict could be incomplete.
+    current_parameter: Optional[:class:`inspect.Parameter`]
+        The parameter that is currently being inspected and converted.
+        This is only of use for within converters.
+
+        .. versionadded:: 2.0
     prefix: :class:`str`
         The prefix that was used to invoke the command.
     command: :class:`Command`
@@ -93,6 +99,7 @@ class Context(discord.abc.Messageable):
         self.invoked_subcommand = attrs.pop('invoked_subcommand', None)
         self.subcommand_passed = attrs.pop('subcommand_passed', None)
         self.command_failed = attrs.pop('command_failed', False)
+        self.current_parameter = attrs.pop('current_parameter', None)
         self._state = self.message._state
 
     async def invoke(self, command, /, *args, **kwargs):
@@ -205,6 +212,20 @@ class Context(discord.abc.Messageable):
 
     async def _get_channel(self):
         return self.channel
+
+    @property
+    def clean_prefix(self):
+        """:class:`str`: The cleaned up invoke prefix. i.e. mentions are ``@name`` instead of ``<@id>``.
+
+        .. versionadded:: 2.0
+        """
+        user = self.guild.me if self.guild else self.bot.user
+        # this breaks if the prefix mention is not the bot itself but I
+        # consider this to be an *incredibly* strange use case. I'd rather go
+        # for this common use case rather than waste performance for the
+        # odd one.
+        pattern = re.compile(r"<@!?%s>" % user.id)
+        return pattern.sub("@%s" % user.display_name.replace('\\', r'\\'), self.prefix)
 
     @property
     def cog(self):

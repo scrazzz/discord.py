@@ -27,6 +27,7 @@ import logging
 import signal
 import sys
 import traceback
+from typing import Any, Optional, Union
 
 import aiohttp
 
@@ -40,6 +41,7 @@ from .enums import ChannelType
 from .mentions import AllowedMentions
 from .errors import *
 from .enums import Status, VoiceRegion
+from .flags import ApplicationFlags
 from .gateway import *
 from .activity import BaseActivity, create_activity
 from .voice_client import VoiceClient
@@ -131,8 +133,6 @@ class Client:
         currently selected intents.
 
         .. versionadded:: 1.5
-    fetch_offline_members: :class:`bool`
-        A deprecated alias of ``chunk_guilds_at_startup``.
     chunk_guilds_at_startup: :class:`bool`
         Indicates if :func:`.on_ready` should be delayed to chunk all guilds
         at start-up if necessary. This operation is incredibly slow for large
@@ -158,37 +158,6 @@ class Client:
         preparing the member cache and firing READY. The default timeout is 2 seconds.
 
         .. versionadded:: 1.4
-    guild_subscriptions: :class:`bool`
-        Whether to dispatch presence or typing events. Defaults to ``True``.
-
-        .. versionadded:: 1.3
-
-        .. warning::
-
-            If this is set to ``False`` then the following features will be disabled:
-
-                - No user related updates (:func:`on_user_update` will not dispatch)
-                - All member related events will be disabled.
-                    - :func:`on_member_update`
-                    - :func:`on_member_join`
-                    - :func:`on_member_remove`
-
-                - Typing events will be disabled (:func:`on_typing`).
-                - If ``fetch_offline_members`` is set to ``False`` then the user cache will not exist.
-                  This makes it difficult or impossible to do many things, for example:
-
-                    - Computing permissions
-                    - Querying members in a voice channel via :attr:`VoiceChannel.members` will be empty.
-                    - Most forms of receiving :class:`Member` will be
-                      receiving :class:`User` instead, except for message events.
-                    - :attr:`Guild.owner` will usually resolve to ``None``.
-                    - :meth:`Guild.get_member` will usually be unavailable.
-                    - Anything that involves using :class:`Member`.
-                    - :attr:`users` will not be as populated.
-                    - etc.
-
-            In short, this makes it so the only member you can reliably query is the
-            message author. Useful for bots that do not require any state.
     assume_unsync_clock: :class:`bool`
         Whether to assume the system clock is unsynced. This applies to the ratelimit handling
         code. If this is set to ``True``, the default, then the library uses the time to reset
@@ -322,6 +291,14 @@ class Client:
         """
         return self._connection.application_id
 
+    @property
+    def application_flags(self) -> ApplicationFlags:
+        """:class:`ApplicationFlags`: The client's application flags.
+
+        .. versionadded: 2.0
+        """
+        return self._connection.application_flags  # type: ignore
+
     def is_ready(self):
         """:class:`bool`: Specifies if the client's internal cache is ready for use."""
         return self._ready.is_set()
@@ -431,14 +408,6 @@ class Client:
 
         Logs in the client with the specified credentials.
 
-        This function can be used in two different ways.
-
-        .. warning::
-
-            Logging on with a user token is against the Discord
-            `Terms of Service <https://support.discord.com/hc/en-us/articles/115002192352>`_
-            and doing so might potentially get your account banned.
-            Use this at your own risk.
 
         Parameters
         -----------
@@ -690,7 +659,7 @@ class Client:
 
     @property
     def intents(self):
-        """:class:`Intents`: The intents configured for this connection.
+        """:class:`~discord.Intents`: The intents configured for this connection.
 
         .. versionadded:: 1.5
         """
@@ -1078,7 +1047,7 @@ class Client:
         """
         code = utils.resolve_template(code)
         data = await self.http.get_template(code)
-        return Template(data=data, state=self._connection)
+        return Template(data=data, state=self._connection) # type: ignore
 
     async def fetch_guild(self, guild_id):
         """|coro|
@@ -1114,7 +1083,7 @@ class Client:
         data = await self.http.get_guild(guild_id)
         return Guild(data=data, state=self._connection)
 
-    async def create_guild(self, name, region=None, icon=None, *, code=None):
+    async def create_guild(self, name: str, region: Optional[VoiceRegion] = None, icon: Any = None, *, code: str = None):
         """|coro|
 
         Creates a :class:`.Guild`.
@@ -1163,7 +1132,7 @@ class Client:
 
     # Invite management
 
-    async def fetch_invite(self, url, *, with_counts=True):
+    async def fetch_invite(self, url: Union[Invite, str], *, with_counts: bool = True, with_expiration: bool = True) -> Invite:
         """|coro|
 
         Gets an :class:`.Invite` from a discord.gg URL or ID.
@@ -1182,6 +1151,11 @@ class Client:
             Whether to include count information in the invite. This fills the
             :attr:`.Invite.approximate_member_count` and :attr:`.Invite.approximate_presence_count`
             fields.
+        with_expiration: :class:`bool`
+            Whether to include the expiration date of the invite. This fills the
+            :attr:`.Invite.expires_at` field.
+
+            .. versionadded:: 2.0
 
         Raises
         -------
@@ -1197,10 +1171,10 @@ class Client:
         """
 
         invite_id = utils.resolve_invite(url)
-        data = await self.http.get_invite(invite_id, with_counts=with_counts)
+        data = await self.http.get_invite(invite_id, with_counts=with_counts, with_expiration=with_expiration)
         return Invite.from_incomplete(state=self._connection, data=data)
 
-    async def delete_invite(self, invite):
+    async def delete_invite(self, invite: Union[Invite, str]) -> None:
         """|coro|
 
         Revokes an :class:`.Invite`, URL, or ID to an invite.
@@ -1281,14 +1255,13 @@ class Client:
     async def fetch_user(self, user_id):
         """|coro|
 
-        Retrieves a :class:`~discord.User` based on their ID. This can only
-        be used by bot accounts. You do not have to share any guilds
-        with the user to get this information, however many operations
-        do require that you do.
+        Retrieves a :class:`~discord.User` based on their ID. 
+        You do not have to share any guilds with the user to get this information,
+        however many operations do require that you do.
 
         .. note::
 
-            This method is an API call. For general usage, consider :meth:`get_user` instead.
+            This method is an API call. If you have :attr:`Intents.members` and member cache enabled, consider :meth:`get_user` instead.
 
         Parameters
         -----------
@@ -1373,3 +1346,31 @@ class Client:
         """
         data = await self.http.get_webhook(webhook_id)
         return Webhook.from_state(data, state=self._connection)
+
+    async def create_dm(self, user):
+        """|coro|
+
+        Creates a :class:`.DMChannel` with this user.
+
+        This should be rarely called, as this is done transparently for most
+        people.
+
+        .. versionadded:: 2.0
+
+        Parameters
+        -----------
+        user: :class:`~discord.abc.Snowflake`
+            The user to create a DM with.
+
+        Returns
+        -------
+        :class:`.DMChannel`
+            The channel that was created.
+        """
+        state = self._connection
+        found = state._get_private_channel_by_user(user.id)
+        if found:
+            return found
+
+        data = await state.http.start_private_message(user.id)
+        return state.add_dm_channel(data)

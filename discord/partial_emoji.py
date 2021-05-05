@@ -22,7 +22,10 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 """
 
-from .asset import Asset
+import io
+
+from .asset import Asset, AssetMixin
+from .errors import DiscordException, InvalidArgument
 from . import utils
 
 __all__ = (
@@ -32,7 +35,7 @@ __all__ = (
 class _EmojiTag:
     __slots__ = ()
 
-class PartialEmoji(_EmojiTag):
+class PartialEmoji(_EmojiTag, AssetMixin):
     """Represents a "partial" emoji.
 
     This model will be given in two scenarios:
@@ -149,44 +152,19 @@ class PartialEmoji(_EmojiTag):
         return utils.snowflake_time(self.id)
 
     @property
-    def url(self):
-        """:class:`Asset`: Returns the asset of the emoji, if it is custom.
+    def url(self) -> str:
+        """:class:`str`: Returns the URL of the emoji, if it is custom.
 
-        This is equivalent to calling :meth:`url_as` with
-        the default parameters (i.e. png/gif detection).
-        """
-        return self.url_as(format=None)
-
-    def url_as(self, *, format=None, static_format="png"):
-        """Returns an :class:`Asset` for the emoji's url, if it is custom.
-
-        The format must be one of 'webp', 'jpeg', 'jpg', 'png' or 'gif'.
-        'gif' is only valid for animated emojis.
-
-        .. versionadded:: 1.7
-
-        Parameters
-        -----------
-        format: Optional[:class:`str`]
-            The format to attempt to convert the emojis to.
-            If the format is ``None``, then it is automatically
-            detected as either 'gif' or static_format, depending on whether the
-            emoji is animated or not.
-        static_format: Optional[:class:`str`]
-            Format to attempt to convert only non-animated emoji's to.
-            Defaults to 'png'
-
-        Raises
-        -------
-        InvalidArgument
-            Bad image format passed to ``format`` or ``static_format``.
-
-        Returns
-        --------
-        :class:`Asset`
-            The resulting CDN asset.
+        If this isn't a custom emoji then an empty string is returned
         """
         if self.is_unicode_emoji():
-            return Asset(self._state)
+            return ''
 
-        return Asset._from_emoji(self._state, self, format=format, static_format=static_format)
+        fmt = 'gif' if self.animated else 'png'
+        return f'{Asset.BASE}/emojis/{self.id}.{fmt}'
+
+    async def read(self) -> bytes:
+        if self.is_unicode_emoji():
+            raise InvalidArgument('PartialEmoji is not a custom emoji')
+
+        return await super().read()

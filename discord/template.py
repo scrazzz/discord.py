@@ -22,6 +22,9 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 """
 
+from __future__ import annotations
+
+from typing import Any, Optional, TYPE_CHECKING, overload
 from .utils import parse_time, _get_as_snowflake, _bytes_to_base64_data
 from .enums import VoiceRegion
 from .guild import Guild
@@ -29,6 +32,9 @@ from .guild import Guild
 __all__ = (
     'Template',
 )
+
+if TYPE_CHECKING:
+    from .types.template import Template as TemplatePayload
 
 
 class _FriendlyHttpAttributeErrorHelper:
@@ -99,13 +105,30 @@ class Template:
         This is referred to as "last synced" in the official Discord client.
     source_guild: :class:`Guild`
         The source guild.
+    is_dirty: Optional[:class:`bool`]
+        Whether the template has unsynced changes.
+
+        .. versionadded:: 2.0
     """
 
-    def __init__(self, *, state, data):
+    __slots__ = (
+        'code',
+        'uses',
+        'name',
+        'description',
+        'creator',
+        'created_at',
+        'updated_at',
+        'source_guild',
+        'is_dirty',
+        '_state',
+    )
+
+    def __init__(self, *, state, data: TemplatePayload):
         self._state = state
         self._store(data)
 
-    def _store(self, data):
+    def _store(self, data: TemplatePayload):
         self.code = data['code']
         self.uses = data['usage_count']
         self.name = data['name']
@@ -120,21 +143,22 @@ class Template:
 
         guild = self._state._get_guild(id)
 
-        if guild is None:
+        if guild is None and id:
             source_serialised = data['serialized_source_guild']
             source_serialised['id'] = id
             state = _PartialTemplateState(state=self._state)
             guild = Guild(data=source_serialised, state=state)
 
         self.source_guild = guild
+        self.is_dirty = data.get('is_dirty', None)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f'<Template code={self.code!r} uses={self.uses} name={self.name!r}'
-            f' creator={self.creator!r} source_guild={self.source_guild!r}>'
+            f' creator={self.creator!r} source_guild={self.source_guild!r} is_dirty={self.is_dirty}>'
         )
 
-    async def create_guild(self, name, region=None, icon=None):
+    async def create_guild(self, name: str, region: Optional[VoiceRegion] = None, icon: Any = None):
         """|coro|
 
         Creates a :class:`.Guild` using the template.
@@ -174,7 +198,7 @@ class Template:
         data = await self._state.http.create_from_template(self.code, name, region_value, icon)
         return Guild(data=data, state=self._state)
 
-    async def sync(self):
+    async def sync(self) -> None:
         """|coro|
 
         Sync the template to the guild's current state.
@@ -197,7 +221,20 @@ class Template:
         data = await self._state.http.sync_template(self.source_guild.id, self.code)
         self._store(data)
 
-    async def edit(self, **kwargs):
+    @overload
+    async def edit(
+        self,
+        *,
+        name: Optional[str] = ...,
+        description: Optional[str] = ...,
+    ) -> None:
+        ...
+
+    @overload
+    async def edit(self) -> None:
+        ...
+
+    async def edit(self, **kwargs) -> None:
         """|coro|
 
         Edit the template metadata.
@@ -226,7 +263,7 @@ class Template:
         data = await self._state.http.edit_template(self.source_guild.id, self.code, kwargs)
         self._store(data)
 
-    async def delete(self):
+    async def delete(self) -> None:
         """|coro|
 
         Delete the template.

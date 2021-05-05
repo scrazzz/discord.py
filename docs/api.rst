@@ -596,16 +596,6 @@ to handle it, which defaults to print a traceback and ignoring the exception.
     :param interaction: The interaction data.
     :type interaction: :class:`Interaction`
 
-.. function:: on_private_channel_delete(channel)
-              on_private_channel_create(channel)
-
-    Called whenever a private channel is deleted or created.
-
-    This requires :attr:`Intents.messages` to be enabled.
-
-    :param channel: The private channel that got created or deleted.
-    :type channel: :class:`abc.PrivateChannel`
-
 .. function:: on_private_channel_update(before, after)
 
     Called whenever a private group DM is updated. e.g. changed name or topic.
@@ -935,6 +925,8 @@ Utility Functions
 
 .. autofunction:: discord.utils.utcnow
 
+.. autofunction:: discord.utils.as_chunks
+
 .. _discord-api-enums:
 
 Enumerations
@@ -1070,6 +1062,21 @@ of :class:`enum.Enum`.
         Discovery requirements for 3 weeks in a row.
 
         .. versionadded:: 1.7
+    .. attribute:: reply
+
+        The message type denoting that the author is replying to a message.
+
+        .. versionadded:: 2.0
+    .. attribute:: application_command
+
+        The system message denoting that an application (or "slash") command was executed.
+
+        .. versionadded:: 2.0
+    .. attribute:: guild_invite_reminder
+
+        The system message sent as a reminder to invite people to the guild.
+
+        .. versionadded:: 2.0
 
 .. class:: ActivityType
 
@@ -1113,20 +1120,6 @@ of :class:`enum.Enum`.
     .. attribute:: application_command
 
         Represents a slash command interaction.
-
-.. class:: HypeSquadHouse
-
-    Specifies the HypeSquad house a user belongs to.
-
-    .. attribute:: bravery
-
-        The "Bravery" house.
-    .. attribute:: brilliance
-
-        The "Brilliance" house.
-    .. attribute:: balance
-
-        The "Balance" house.
 
 .. class:: VoiceRegion
 
@@ -1356,7 +1349,7 @@ of :class:`enum.Enum`.
         - Changing the guild invite splash
         - Changing the guild AFK channel or timeout
         - Changing the guild voice server region
-        - Changing the guild icon
+        - Changing the guild icon, banner, or discovery splash
         - Changing the guild moderation settings
         - Changing things related to the guild widget
 
@@ -1374,6 +1367,9 @@ of :class:`enum.Enum`.
         - :attr:`~AuditLogDiff.name`
         - :attr:`~AuditLogDiff.owner`
         - :attr:`~AuditLogDiff.splash`
+        - :attr:`~AuditLogDiff.discovery_splash`
+        - :attr:`~AuditLogDiff.icon`
+        - :attr:`~AuditLogDiff.banner`
         - :attr:`~AuditLogDiff.vanity_url_code`
 
     .. attribute:: channel_create
@@ -1413,6 +1409,8 @@ of :class:`enum.Enum`.
         - :attr:`~AuditLogDiff.overwrites`
         - :attr:`~AuditLogDiff.topic`
         - :attr:`~AuditLogDiff.bitrate`
+        - :attr:`~AuditLogDiff.rtc_region`
+        - :attr:`~AuditLogDiff.video_quality_mode`
 
     .. attribute:: channel_delete
 
@@ -1703,6 +1701,7 @@ of :class:`enum.Enum`.
 
         - :attr:`~AuditLogDiff.channel`
         - :attr:`~AuditLogDiff.name`
+        - :attr:`~AuditLogDiff.avatar`
 
     .. attribute:: webhook_delete
 
@@ -1945,6 +1944,38 @@ of :class:`enum.Enum`.
 
         Represents a sticker with a lottie image.
 
+.. class:: InviteTarget
+
+    Represents the type of target an invite contains.
+
+    .. versionadded:: 2.0
+
+    .. attribute:: unknown
+
+        The invite doesn't target anyone or anything.
+
+    .. attribute:: stream
+
+        The invite targets a stream.
+        
+    .. attribute:: embedded_application
+    
+        The invite targets an embedded application activity.
+
+.. class:: VideoQualityMode
+
+    Represents the camera video quality mode for voice channel participants.
+
+    .. versionadded:: 2.0
+
+    .. attribute:: auto
+
+        Represents auto camera video quality.
+
+    .. attribute:: full
+
+        Represents full camera video quality.
+
 Async Iterator
 ----------------
 
@@ -2173,15 +2204,27 @@ AuditLogDiff
 
     .. attribute:: icon
 
-        A guild's icon hash. See also :attr:`Guild.icon`.
+        A guild's icon. See also :attr:`Guild.icon`.
 
-        :type: :class:`str`
+        :type: :class:`Asset`
 
     .. attribute:: splash
 
-        The guild's invite splash hash. See also :attr:`Guild.splash`.
+        The guild's invite splash. See also :attr:`Guild.splash`.
 
-        :type: :class:`str`
+        :type: :class:`Asset`
+
+    .. attribute:: discovery_splash
+
+        The guild's discovery splash. See also :attr:`Guild.discovery_splash`.
+
+        :type: :class:`Asset`
+
+    .. attribute:: banner
+
+        The guild's banner. See also :attr:`Guild.banner`.
+
+        :type: :class:`Asset`
 
     .. attribute:: owner
 
@@ -2214,6 +2257,30 @@ AuditLogDiff
         with the ID being set.
 
         See :attr:`Guild.system_channel`.
+
+        :type: Union[:class:`TextChannel`, :class:`Object`]
+
+
+    .. attribute:: rules_channel
+
+        The guild's rules channel.
+
+        If this could not be found then it falls back to a :class:`Object`
+        with the ID being set.
+
+        See :attr:`Guild.rules_channel`.
+
+        :type: Union[:class:`TextChannel`, :class:`Object`]
+
+
+    .. attribute:: public_updates_channel
+
+        The guild's public updates channel.
+
+        If this could not be found then it falls back to a :class:`Object`
+        with the ID being set.
+
+        See :attr:`Guild.public_updates_channel`.
 
         :type: Union[:class:`TextChannel`, :class:`Object`]
 
@@ -2467,11 +2534,11 @@ AuditLogDiff
 
     .. attribute:: avatar
 
-        The avatar hash of a member.
+        The avatar of a member.
 
         See also :attr:`User.avatar`.
 
-        :type: :class:`str`
+        :type: :class:`Asset`
 
     .. attribute:: slowmode_delay
 
@@ -2481,6 +2548,23 @@ AuditLogDiff
         See also :attr:`TextChannel.slowmode_delay`.
 
         :type: :class:`int`
+
+    .. attribute:: rtc_region
+
+        The region for the voice channel’s voice communication.
+        A value of ``None`` indicates automatic voice region detection.
+
+        See also :attr:`VoiceChannel.rtc_region`.
+
+        :type: :class:`VoiceRegion`
+
+    .. attribute:: video_quality_mode
+
+        The camera video quality for the voice channel's participants.
+
+        See also :attr:`VoiceChannel.video_quality_mode`.
+
+        :type: :class:`VideoQualityMode`
 
 .. this is currently missing the following keys: reason and application_id
    I'm not sure how to about porting these
@@ -2495,7 +2579,7 @@ Webhook
 
 .. attributetable:: Webhook
 
-.. autoclass:: Webhook
+.. autoclass:: Webhook()
     :members:
 
 WebhookMessage
@@ -2503,22 +2587,23 @@ WebhookMessage
 
 .. attributetable:: WebhookMessage
 
-.. autoclass:: WebhookMessage
+.. autoclass:: WebhookMessage()
     :members:
 
-Adapters
-~~~~~~~~~
+SyncWebhook
+~~~~~~~~~~~~
 
-Adapters allow you to change how the request should be handled. They all build on a single
-interface, :meth:`WebhookAdapter.request`.
+.. attributetable:: SyncWebhook
 
-.. autoclass:: WebhookAdapter
+.. autoclass:: SyncWebhook()
     :members:
 
-.. autoclass:: AsyncWebhookAdapter
-    :members:
+SyncWebhookMessage
+~~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: RequestsWebhookAdapter
+.. attributetable:: SyncWebhookMessage
+
+.. autoclass:: SyncWebhookMessage()
     :members:
 
 .. _discord_api_abcs:
@@ -2654,6 +2739,7 @@ Asset
 
 .. autoclass:: Asset()
     :members:
+    :inherited-members:
 
 Message
 ~~~~~~~
@@ -2771,6 +2857,7 @@ Emoji
 
 .. autoclass:: Emoji()
     :members:
+    :inherited-members:
 
 PartialEmoji
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -2779,6 +2866,7 @@ PartialEmoji
 
 .. autoclass:: PartialEmoji()
     :members:
+    :inherited-members:
 
 Role
 ~~~~~
@@ -2790,6 +2878,8 @@ Role
 
 RoleTags
 ~~~~~~~~~~
+
+.. attributetable:: RoleTags
 
 .. autoclass:: RoleTags()
     :members:
@@ -3051,11 +3141,15 @@ AllowedMentions
 MessageReference
 ~~~~~~~~~~~~~~~~~
 
+.. attributetable:: MessageReference
+
 .. autoclass:: MessageReference
     :members:
 
 PartialMessage
 ~~~~~~~~~~~~~~~~~
+
+.. attributetable:: PartialMessage
 
 .. autoclass:: PartialMessage
     :members:
@@ -3063,13 +3157,25 @@ PartialMessage
 Intents
 ~~~~~~~~~~
 
+.. attributetable:: Intents
+
 .. autoclass:: Intents
     :members:
 
 MemberCacheFlags
 ~~~~~~~~~~~~~~~~~~
 
+.. attributetable:: MemberCacheFlags
+
 .. autoclass:: MemberCacheFlags
+    :members:
+
+ApplicationFlags
+~~~~~~~~~~~~~~~~~
+
+.. attributetable:: ApplicationFlags
+
+.. autoclass:: ApplicationFlags
     :members:
 
 File
@@ -3147,11 +3253,15 @@ PermissionOverwrite
 ShardInfo
 ~~~~~~~~~~~
 
+.. attributetable:: ShardInfo
+
 .. autoclass:: ShardInfo()
     :members:
 
 SystemChannelFlags
 ~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: SystemChannelFlags
 
 .. autoclass:: SystemChannelFlags()
     :members:
@@ -3159,11 +3269,15 @@ SystemChannelFlags
 MessageFlags
 ~~~~~~~~~~~~
 
+.. attributetable:: MessageFlags
+
 .. autoclass:: MessageFlags()
     :members:
 
 PublicUserFlags
 ~~~~~~~~~~~~~~~
+
+.. attributetable:: PublicUserFlags
 
 .. autoclass:: PublicUserFlags()
     :members:
