@@ -127,7 +127,6 @@ else:
 T = TypeVar('T')
 T_co = TypeVar('T_co', covariant=True)
 _Iter = Union[Iterator[T], AsyncIterator[T]]
-CSP = TypeVar('CSP', bound='CachedSlotProperty')
 
 
 class CachedSlotProperty(Generic[T, T_co]):
@@ -137,7 +136,7 @@ class CachedSlotProperty(Generic[T, T_co]):
         self.__doc__ = getattr(function, '__doc__')
 
     @overload
-    def __get__(self: CSP, instance: None, owner: Type[T]) -> CSP:
+    def __get__(self, instance: None, owner: Type[T]) -> CachedSlotProperty[T, T_co]:
         ...
 
     @overload
@@ -503,6 +502,21 @@ async def sane_wait_for(futures, *, timeout):
     return done
 
 
+def get_slots(cls: Type[Any]) -> Iterator[str]:
+    for mro in reversed(cls.__mro__):
+        try:
+            yield from mro.__slots__
+        except AttributeError:
+            continue
+
+
+def compute_timedelta(dt: datetime.datetime):
+    if dt.tzinfo is None:
+        dt = dt.astimezone()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return max((dt - now).total_seconds(), 0)
+
+
 async def sleep_until(when: datetime.datetime, result: Optional[T] = None) -> Optional[T]:
     """|coro|
 
@@ -520,11 +534,8 @@ async def sleep_until(when: datetime.datetime, result: Optional[T] = None) -> Op
     result: Any
         If provided is returned to the caller when the coroutine completes.
     """
-    if when.tzinfo is None:
-        when = when.astimezone()
-    now = datetime.datetime.now(datetime.timezone.utc)
-    delta = (when - now).total_seconds()
-    return await asyncio.sleep(max(delta, 0), result)
+    delta = compute_timedelta(when)
+    return await asyncio.sleep(delta, result)
 
 
 def utcnow() -> datetime.datetime:

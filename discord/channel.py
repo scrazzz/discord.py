@@ -22,16 +22,20 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 """
 
+from __future__ import annotations
+
 import time
 import asyncio
+from typing import Callable, Dict, List, Optional, TYPE_CHECKING, Union, overload
 
 import discord.abc
-from .permissions import Permissions
-from .enums import ChannelType, try_enum, VoiceRegion, VideoQualityMode
+from .permissions import PermissionOverwrite, Permissions
+from .enums import ChannelType, StagePrivacyLevel, try_enum, VoiceRegion, VideoQualityMode
 from .mixins import Hashable
 from . import utils
 from .asset import Asset
 from .errors import ClientException, NoMoreItems, InvalidArgument
+from .stage_instance import StageInstance
 
 __all__ = (
     'TextChannel',
@@ -43,6 +47,14 @@ __all__ = (
     'GroupChannel',
     '_channel_factory',
 )
+
+if TYPE_CHECKING:
+    from .role import Role
+    from .member import Member, VoiceState
+    from .abc import Snowflake
+    from .message import Message
+    from .webhook import Webhook
+    from .abc import SnowflakeTime
 
 async def _single_delete_strategy(messages):
     for m in messages:
@@ -190,6 +202,27 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         """
         return self._state._get_message(self.last_message_id) if self.last_message_id else None
 
+    @overload
+    async def edit(
+        self,
+        *,
+        reason: Optional[str] = ...,
+        name: str = ...,
+        topic: str = ...,
+        position: int = ...,
+        nsfw: bool = ...,
+        sync_permissions: bool = ...,
+        category: Optional[CategoryChannel] = ...,
+        slowmode_delay: int = ...,
+        type: ChannelType = ...,
+        overwrites: Dict[Union[Role, Member, Snowflake], PermissionOverwrite] = ...,
+    ) -> None:
+        ...
+
+    @overload
+    async def edit(self) -> None:
+        ...
+
     async def edit(self, *, reason=None, **options):
         """|coro|
 
@@ -246,7 +279,7 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         await self._edit(options, reason=reason)
 
     @utils.copy_doc(discord.abc.GuildChannel.clone)
-    async def clone(self, *, name=None, reason=None):
+    async def clone(self, *, name: str = None, reason: str = None) -> TextChannel:
         return await self._clone_impl({
             'topic': self.topic,
             'nsfw': self.nsfw,
@@ -302,7 +335,17 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         message_ids = [m.id for m in messages]
         await self._state.http.delete_messages(self.id, message_ids)
 
-    async def purge(self, *, limit=100, check=None, before=None, after=None, around=None, oldest_first=False, bulk=True):
+    async def purge(
+        self,
+        *,
+        limit: int = 100,
+        check: Callable[[Message], bool] = None,
+        before: Optional[SnowflakeTime] = None,
+        after: Optional[SnowflakeTime] = None,
+        around: Optional[SnowflakeTime] = None,
+        oldest_first: Optional[bool] = False,
+        bulk: bool = True,
+    ) -> List[Message]:
         """|coro|
 
         Purges a list of messages that meet the criteria given by the predicate
@@ -428,7 +471,7 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         data = await self._state.http.channel_webhooks(self.id)
         return [Webhook.from_state(d, state=self._state) for d in data]
 
-    async def create_webhook(self, *, name, avatar=None, reason=None):
+    async def create_webhook(self, *, name: str, avatar: bytes = None, reason: str = None) -> Webhook:
         """|coro|
 
         Creates a webhook for this channel.
@@ -468,7 +511,7 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         data = await self._state.http.create_webhook(self.id, name=str(name), avatar=avatar, reason=reason)
         return Webhook.from_state(data, state=self._state)
 
-    async def follow(self, *, destination, reason=None):
+    async def follow(self, *, destination: TextChannel, reason: Optional[str] = None) -> Webhook:
         """
         Follows a channel using a webhook.
 
@@ -569,7 +612,7 @@ class VocalGuildChannel(discord.abc.Connectable, discord.abc.GuildChannel, Hasha
         return ChannelType.voice.value
 
     @property
-    def members(self):
+    def members(self) -> List[Member]:
         """List[:class:`Member`]: Returns all members that are currently inside this voice channel."""
         ret = []
         for user_id, state in self.guild._voice_states.items():
@@ -580,7 +623,7 @@ class VocalGuildChannel(discord.abc.Connectable, discord.abc.GuildChannel, Hasha
         return ret
 
     @property
-    def voice_states(self):
+    def voice_states(self) -> Dict[int, VoiceState]:
         """Returns a mapping of member IDs who have voice states in this channel.
 
         .. versionadded:: 1.3
@@ -598,7 +641,7 @@ class VocalGuildChannel(discord.abc.Connectable, discord.abc.GuildChannel, Hasha
         return {key: value for key, value in self.guild._voice_states.items() if value.channel.id == self.id}
 
     @utils.copy_doc(discord.abc.GuildChannel.permissions_for)
-    def permissions_for(self, member):
+    def permissions_for(self, member: Union[Role, Member], /) -> Permissions:
         base = super().permissions_for(member)
 
         # voice channels cannot be edited by people who can't connect to them
@@ -680,11 +723,32 @@ class VoiceChannel(VocalGuildChannel):
         return ChannelType.voice
 
     @utils.copy_doc(discord.abc.GuildChannel.clone)
-    async def clone(self, *, name=None, reason=None):
+    async def clone(self, *, name: str = None, reason: str = None) -> VoiceChannel:
         return await self._clone_impl({
             'bitrate': self.bitrate,
             'user_limit': self.user_limit
         }, name=name, reason=reason)
+
+    @overload
+    async def edit(
+        self,
+        *,
+        reason: Optional[str] = ...,
+        name: str = ...,
+        bitrate: int = ...,
+        user_limit: int = ...,
+        position: int = ...,
+        sync_permissions: int = ...,
+        category: Optional[CategoryChannel] = ...,
+        overwrites: Dict[Union[Role, Member], PermissionOverwrite] = ...,
+        rtc_region: Optional[VoiceRegion] = ...,
+        video_quality_mode: VideoQualityMode = ...,
+    ) -> None:
+        ...
+
+    @overload
+    async def edit(self) -> None:
+        ...
 
     async def edit(self, *, reason=None, **options):
         """|coro|
@@ -812,9 +876,34 @@ class StageChannel(VocalGuildChannel):
         self.topic = data.get('topic')
 
     @property
-    def requesting_to_speak(self):
+    def requesting_to_speak(self) -> List[Member]:
         """List[:class:`Member`]: A list of members who are requesting to speak in the stage channel."""
         return [member for member in self.members if member.voice.requested_to_speak_at is not None]
+
+    @property
+    def speakers(self) -> List[Member]:
+        """List[:class:`Member`]: A list of members who have been permitted to speak in the stage channel.
+
+        .. versionadded:: 2.0
+        """
+        return [member for member in self.members if not member.voice.suppress and member.voice.requested_to_speak_at is None]
+
+    @property
+    def listeners(self) -> List[Member]:
+        """List[:class:`Member`]: A list of members who are listening in the stage channel.
+
+        .. versionadded:: 2.0
+        """
+        return [member for member in self.members if member.voice.suppress]
+
+    @property
+    def moderators(self) -> List[Member]:
+        """List[:class:`Member`]: A list of members who are moderating the stage channel.
+
+        .. versionadded:: 2.0
+        """
+        required_permissions = Permissions.stage_moderator()
+        return [member for member in self.members if self.permissions_for(member) >= required_permissions]
 
     @property
     def type(self):
@@ -822,10 +911,104 @@ class StageChannel(VocalGuildChannel):
         return ChannelType.stage_voice
 
     @utils.copy_doc(discord.abc.GuildChannel.clone)
-    async def clone(self, *, name=None, reason=None):
-        return await self._clone_impl({
-            'topic': self.topic,
-        }, name=name, reason=reason)
+    async def clone(self, *, name: str = None, reason: Optional[str] = None) -> StageChannel:
+        return await self._clone_impl({}, name=name, reason=reason)
+
+    @property
+    def instance(self) -> Optional[StageInstance]:
+        """Optional[:class:`StageInstance`]: The running stage instance of the stage channel.
+
+        .. versionadded:: 2.0
+        """
+        return utils.get(self.guild.stage_instances, channel_id=self.id)
+
+    async def create_instance(self, *, topic: str, privacy_level: StagePrivacyLevel = utils.MISSING) -> StageInstance:
+        """|coro|
+
+        Create a stage instance.
+
+        You must have the :attr:`~Permissions.manage_channels` permission to
+        use this.
+
+        .. versionadded:: 2.0
+
+        Parameters
+        -----------
+        topic: :class:`str`
+            The stage instance's topic.
+        privacy_level: :class:`StagePrivacyLevel`
+            The stage instance's privacy level. Defaults to :attr:`PrivacyLevel.guild_only`.
+
+        Raises
+        ------
+        InvalidArgument
+            If the ``privacy_level`` parameter is not the proper type.
+        Forbidden
+            You do not have permissions to create a stage instance.
+        HTTPException
+            Creating a stage instance failed.
+
+        Returns
+        --------
+        :class:`StageInstance`
+            The newly created stage instance.
+        """
+
+        payload = {
+            'channel_id': self.id,
+            'topic': topic
+        }
+
+        if privacy_level is not utils.MISSING:
+            if not isinstance(privacy_level, StagePrivacyLevel):
+                raise InvalidArgument('privacy_level field must be of type PrivacyLevel')
+
+            payload['privacy_level'] = privacy_level.value
+
+        data = await self._state.http.create_stage_instance(**payload)
+        return StageInstance(guild=self.guild, state=self._state, data=data)
+
+    async def fetch_instance(self) -> StageInstance:
+        """|coro|
+
+        Gets the running :class:`StageInstance`.
+
+        .. versionadded:: 2.0
+
+        Raises
+        -------
+        :exc:`.NotFound`
+            The stage instance or channel could not be found.
+        :exc:`.HTTPException`
+            Getting the stage instance failed.
+
+        Returns
+        --------
+        :class:`StageInstance`
+            The stage instance.
+        """
+        data = await self._state.http.get_stage_instance(self.id)
+        return StageInstance(guild=self.guild, state=self._state, data=data)
+
+    @overload
+    async def edit(
+        self,
+        *,
+        reason: Optional[str] = ...,
+        name: str = ...,
+        topic: Optional[str] = ...,
+        position: int = ...,
+        sync_permissions: int = ...,
+        category: Optional[CategoryChannel] = ...,
+        overwrites: Dict[Union[Role, Member], PermissionOverwrite] = ...,
+        rtc_region: Optional[VoiceRegion] = ...,
+        video_quality_mode: VideoQualityMode = ...,
+    ) -> None:
+        ...
+
+    @overload
+    async def edit(self) -> None:
+        ...
 
     async def edit(self, *, reason=None, **options):
         """|coro|
@@ -835,12 +1018,13 @@ class StageChannel(VocalGuildChannel):
         You must have the :attr:`~Permissions.manage_channels` permission to
         use this.
 
+        .. versionchanged:: 2.0
+            The ``topic`` parameter must now be set via :attr:`create_instance`.
+
         Parameters
         ----------
         name: :class:`str`
             The new channel's name.
-        topic: :class:`str`
-            The new channel's topic.
         position: :class:`int`
             The new channel's position.
         sync_permissions: :class:`bool`
@@ -873,7 +1057,6 @@ class StageChannel(VocalGuildChannel):
         """
 
         await self._edit(options, reason=reason)
-
 class CategoryChannel(discord.abc.GuildChannel, Hashable):
     """Represents a Discord channel category.
 
@@ -948,10 +1131,26 @@ class CategoryChannel(discord.abc.GuildChannel, Hashable):
         return self.nsfw or self.guild.nsfw
 
     @utils.copy_doc(discord.abc.GuildChannel.clone)
-    async def clone(self, *, name=None, reason=None):
+    async def clone(self, *, name: str = None, reason: Optional[str] = None) -> CategoryChannel:
         return await self._clone_impl({
             'nsfw': self.nsfw
         }, name=name, reason=reason)
+
+    @overload
+    async def edit(
+        self,
+        *,
+        reason: Optional[str] = ...,
+        name: str = ...,
+        position: int = ...,
+        nsfw: bool = ...,
+        overwrites: Dict[Union[Role, Member], PermissionOverwrite] = ...,
+    ) -> None:
+        ...
+
+    @overload
+    async def edit(self) -> None:
+        ...
 
     async def edit(self, *, reason=None, **options):
         """|coro|
@@ -1159,10 +1358,28 @@ class StoreChannel(discord.abc.GuildChannel, Hashable):
         return self.nsfw or self.guild.nsfw
 
     @utils.copy_doc(discord.abc.GuildChannel.clone)
-    async def clone(self, *, name=None, reason=None):
+    async def clone(self, *, name: str = None, reason: Optional[str] = None) -> StoreChannel:
         return await self._clone_impl({
             'nsfw': self.nsfw
         }, name=name, reason=reason)
+
+    @overload
+    async def edit(
+        self,
+        *,
+        name: str = ...,
+        position: int = ...,
+        nsfw: bool = ...,
+        sync_permissions: bool = ...,
+        category: Optional[CategoryChannel],
+        reason: Optional[str],
+        overwrites: Dict[Union[Role, Member], PermissionOverwrite]
+    ) -> None:
+        ...
+
+    @overload
+    async def edit(self) -> None:
+        ...
 
     async def edit(self, *, reason=None, **options):
         """|coro|

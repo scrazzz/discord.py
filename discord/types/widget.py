@@ -22,30 +22,37 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 """
 
-from typing import TypeVar
+from typing import List, TypedDict
+from .activity import Activity
+from .snowflake import Snowflake
+from .user import User
 
-__all__ = (
-    'EqualityComparable',
-    'Hashable',
-)
 
-E = TypeVar('E', bound='EqualityComparable')
+class WidgetChannel(TypedDict):
+    id: Snowflake
+    name: str
+    position: int
 
-class EqualityComparable:
-    __slots__ = ()
 
-    id: int
+class WidgetMember(User, total=False):
+    nick: str
+    game: Activity
+    status: str
+    avatar_url: str
+    deaf: bool
+    self_deaf: bool
+    mute: bool
+    self_mute: bool
+    suppress: bool
 
-    def __eq__(self: E, other: E) -> bool:
-        return isinstance(other, self.__class__) and other.id == self.id
 
-    def __ne__(self: E, other: E) -> bool:
-        if isinstance(other, self.__class__):
-            return other.id != self.id
-        return True
+class _WidgetOptional(TypedDict, total=False):
+    channels: List[WidgetChannel]
+    members: List[WidgetMember]
+    presence_count: int
 
-class Hashable(EqualityComparable):
-    __slots__ = ()
 
-    def __hash__(self) -> int:
-        return self.id >> 22
+class Widget(_WidgetOptional):
+    id: Snowflake
+    name: str
+    instant_invite: str

@@ -44,7 +44,9 @@ if TYPE_CHECKING:
     from .types import (
         interactions,
         invite,
+        stage_instance,
     )
+    from .types.snowflake import Snowflake
 
     T = TypeVar('T')
     Response = Coroutine[Any, Any, T]
@@ -354,6 +356,7 @@ class HTTPClient:
         nonce=None,
         allowed_mentions=None,
         message_reference=None,
+        components=None,
     ):
         r = Route('POST', '/channels/{channel_id}/messages', channel_id=channel_id)
         payload = {}
@@ -376,6 +379,9 @@ class HTTPClient:
         if message_reference:
             payload['message_reference'] = message_reference
 
+        if components:
+            payload['components'] = components
+
         return self.request(r, json=payload)
 
     def send_typing(self, channel_id):
@@ -393,6 +399,7 @@ class HTTPClient:
         nonce=None,
         allowed_mentions=None,
         message_reference=None,
+        components=None,
     ):
         form = []
 
@@ -409,6 +416,8 @@ class HTTPClient:
             payload['allowed_mentions'] = allowed_mentions
         if message_reference:
             payload['message_reference'] = message_reference
+        if components:
+            payload['components'] = components
 
         form.append({'name': 'payload_json', 'value': utils.to_json(payload)})
         if len(files) == 1:
@@ -445,6 +454,7 @@ class HTTPClient:
         nonce=None,
         allowed_mentions=None,
         message_reference=None,
+        components=None,
     ):
         r = Route('POST', '/channels/{channel_id}/messages', channel_id=channel_id)
         return self.send_multipart_helper(
@@ -456,6 +466,7 @@ class HTTPClient:
             nonce=nonce,
             allowed_mentions=allowed_mentions,
             message_reference=message_reference,
+            components=components,
         )
 
     def delete_message(self, channel_id, message_id, *, reason=None):
@@ -960,6 +971,9 @@ class HTTPClient:
 
     def get_widget(self, guild_id):
         return self.request(Route('GET', '/guilds/{guild_id}/widget.json', guild_id=guild_id))
+    
+    def edit_widget(self, guild_id, payload):
+        return self.request(Route('PATCH', '/guilds/{guild_id}/widget', guild_id=guild_id), json=payload)
 
     # Invite management
 
@@ -972,6 +986,9 @@ class HTTPClient:
         max_uses: int = 0,
         temporary: bool = False,
         unique: bool = True,
+        target_type: Optional[int] = None,
+        target_user_id: Optional[int] = None,
+        target_application_id: Optional[int] = None
     ) -> Response[invite.Invite]:
         r = Route('POST', '/channels/{channel_id}/invites', channel_id=channel_id)
         payload = {
@@ -980,6 +997,15 @@ class HTTPClient:
             'temporary': temporary,
             'unique': unique,
         }
+
+        if target_type:
+            payload['target_type'] = target_type
+
+        if target_user_id:
+            payload['target_user_id'] = target_user_id
+
+        if target_application_id:
+            payload['target_application_id'] = str(target_application_id)
 
         return self.request(r, reason=reason, json=payload)
 
@@ -1058,6 +1084,33 @@ class HTTPClient:
 
     def move_member(self, user_id, guild_id, channel_id, *, reason=None):
         return self.edit_member(guild_id=guild_id, user_id=user_id, channel_id=channel_id, reason=reason)
+
+    # Stage instance management
+
+    def get_stage_instance(self, channel_id: Snowflake) -> Response[stage_instance.StageInstance]:
+        return self.request(Route('GET', '/stage-instances/{channel_id}', channel_id=channel_id))
+
+    def create_stage_instance(self, **payload) -> Response[stage_instance.StageInstance]:
+        valid_keys = (
+            'channel_id',
+            'topic',
+            'privacy_level',
+        )
+        payload = {k: v for k, v in payload.items() if k in valid_keys}
+
+        return self.request(Route('POST', '/stage-instances'), json=payload)
+
+    def edit_stage_instance(self, channel_id: Snowflake, **payload) -> Response[None]:
+        valid_keys = (
+            'topic',
+            'privacy_level',
+        )
+        payload = {k: v for k, v in payload.items() if k in valid_keys}
+
+        return self.request(Route('PATCH', '/stage-instances/{channel_id}', channel_id=channel_id), json=payload)
+
+    def delete_stage_instance(self, channel_id: Snowflake) -> Response[None]:
+        return self.request(Route('DELETE', '/stage-instances/{channel_id}', channel_id=channel_id))
 
     # Application commands (global)
 
@@ -1210,14 +1263,21 @@ class HTTPClient:
 
         return self.request(route, form=form, files=[file])
 
-    def create_interaction_response(self, interaction_id, token):
+    def create_interaction_response(self, interaction_id, token, *, type, data=None):
         r = Route(
             'POST',
             '/interactions/{interaction_id}/{interaction_token}/callback',
             interaction_id=interaction_id,
             interaction_token=token,
         )
-        return self.request(r)
+        payload = {
+            'type': type,
+        }
+
+        if data is not None:
+            payload['data'] = data
+
+        return self.request(r, json=payload)
 
     def get_original_interaction_response(
         self,
