@@ -29,7 +29,7 @@ import datetime
 import re
 import io
 from os import PathLike
-from typing import TYPE_CHECKING, Union, List, Optional, Any, Callable, Tuple, ClassVar, Optional, overload
+from typing import Dict, TYPE_CHECKING, Union, List, Optional, Any, Callable, Tuple, ClassVar, Optional, overload
 
 from . import utils
 from .reaction import Reaction
@@ -42,7 +42,7 @@ from .embeds import Embed
 from .member import Member
 from .flags import MessageFlags
 from .file import File
-from .utils import escape_mentions
+from .utils import escape_mentions, MISSING
 from .guild import Guild
 from .mixins import Hashable
 from .sticker import Sticker
@@ -1110,10 +1110,30 @@ class Message(Hashable):
         ...
 
     @overload
-    async def edit(self) -> None:
+    async def edit(
+        self,
+        *,
+        content: Optional[str] = ...,
+        embeds: List[Embed] = ...,
+        attachments: List[Attachment] = ...,
+        suppress: bool = ...,
+        delete_after: Optional[float] = ...,
+        allowed_mentions: Optional[AllowedMentions] = ...,
+        view: Optional[View] = ...,
+    ) -> None:
         ...
 
-    async def edit(self, **fields) -> None:
+    async def edit(
+        self,
+        content: Optional[str] = MISSING,
+        embed: Optional[Embed] = MISSING,
+        embeds: List[Embed] = MISSING,
+        attachments: List[Attachment] = MISSING,
+        suppress: bool = MISSING,
+        delete_after: Optional[float] = None,
+        allowed_mentions: Optional[AllowedMentions] = MISSING,
+        view: Optional[View] = MISSING,
+    ) -> None:
         """|coro|
 
         Edits the message.
@@ -1131,6 +1151,11 @@ class Message(Hashable):
         embed: Optional[:class:`Embed`]
             The new embed to replace the original with.
             Could be ``None`` to remove the embed.
+        embeds: List[:class:`Embeds`]
+            The new embeds to replace the original with. Must be a maximum of 10.
+            To remove all embeds ``[]`` should be passed.
+
+            .. versionadded:: 2.0
         attachments: List[:class:`Attachment`]
             A list of attachments to keep in the message. If ``[]`` is passed
             then all attachments are removed.
@@ -1156,8 +1181,6 @@ class Message(Hashable):
             The updated view to update this message with. If ``None`` is passed then
             the view is removed.
 
-            .. versionadded:: 2.0
-
         Raises
         -------
         HTTPException
@@ -1165,69 +1188,56 @@ class Message(Hashable):
         Forbidden
             Tried to suppress a message without permissions or
             edited a message's content or embed that isn't yours.
+        ~discord.InvalidArgument
+            You specified both ``embed`` and ``embeds``
         """
 
-        try:
-            content = fields['content']
-        except KeyError:
-            pass
-        else:
+        payload: Dict[str, Any] = {}
+        if content is not MISSING:
             if content is not None:
-                fields['content'] = str(content)
+                payload['content'] = str(content)
+            else:
+                payload['content'] = None
 
-        try:
-            embed = fields['embed']
-        except KeyError:
-            pass
-        else:
-            if embed is not None:
-                fields['embed'] = embed.to_dict()
+        if embed is not MISSING and embeds is not MISSING:
+            raise InvalidArgument('cannot pass both embed and embeds parameter to edit()')
 
-        try:
-            suppress = fields.pop('suppress')
-        except KeyError:
-            pass
-        else:
+        if embed is not MISSING:
+            if embed is None:
+                payload['embeds'] = []
+            else:
+                payload['embeds'] = [embed.to_dict()]
+        elif embeds is not MISSING:
+            payload['embeds'] = [e.to_dict() for e in embeds]
+
+        if suppress is not MISSING:
             flags = MessageFlags._from_value(self.flags.value)
             flags.suppress_embeds = suppress
-            fields['flags'] = flags.value
+            payload['flags'] = flags.value
 
-        delete_after = fields.pop('delete_after', None)
 
-        try:
-            allowed_mentions = fields.pop('allowed_mentions')
-        except KeyError:
+        if allowed_mentions is MISSING:
             if self._state.allowed_mentions is not None and self.author.id == self._state.self_id:
-                fields['allowed_mentions'] = self._state.allowed_mentions.to_dict()
+                payload['allowed_mentions'] = self._state.allowed_mentions.to_dict()
         else:
             if allowed_mentions is not None:
                 if self._state.allowed_mentions is not None:
-                    allowed_mentions = self._state.allowed_mentions.merge(allowed_mentions).to_dict()
+                    payload['allowed_mentions'] = self._state.allowed_mentions.merge(allowed_mentions).to_dict()
                 else:
-                    allowed_mentions = allowed_mentions.to_dict()
-                fields['allowed_mentions'] = allowed_mentions
+                    payload['allowed_mentions'] = allowed_mentions.to_dict()
 
-        try:
-            attachments = fields.pop('attachments')
-        except KeyError:
-            pass
-        else:
-            fields['attachments'] = [a.to_dict() for a in attachments]
+        if attachments is not MISSING:
+            payload['attachments'] = [a.to_dict() for a in attachments]
 
-        try:
-            view = fields.pop('view')
-        except KeyError:
-            # To check for the view afterwards
-            view = None
-        else:
+        if view is not MISSING:
             self._state.prevent_view_updates_for(self.id)
             if view:
-                fields['components'] = view.to_components()
+                payload['components'] = view.to_components()
             else:
-                fields['components'] = []
+                payload['components'] = []
 
-        if fields:
-            data = await self._state.http.edit_message(self.channel.id, self.id, **fields)
+        if payload:
+            data = await self._state.http.edit_message(self.channel.id, self.id, **payload)
             self._update(data)
 
         if view and not view.is_finished():
